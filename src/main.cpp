@@ -137,9 +137,9 @@ int main() {
           Eigen::VectorXd x_way_pts = Eigen::VectorXd::Map(ptsx.data(), ptsx.size());
           Eigen::VectorXd y_way_pts = Eigen::VectorXd::Map(ptsy.data(), ptsy.size());
 
-          auto coeffs = polyfit(x_way_pts, y_way_pts, 1);
+          auto coeffs = polyfit(x_way_pts, y_way_pts, 3);
 
-          double cte = polyeval(coeffs, 0);
+          double cte = polyeval(coeffs, 0) - py;
           double epsi = psi - atan(coeffs[1]);
 
           state << px, py, psi, v, cte, epsi;
@@ -176,11 +176,12 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-          next_x_vals =  ptsx;
-          next_y_vals = ptsy;
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
-
+          for (double i = 0; i < 100; i += 3){
+            next_x_vals.push_back(i);
+            next_y_vals.push_back(polyeval(coeffs, i));
+          }
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
