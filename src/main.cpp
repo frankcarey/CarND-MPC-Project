@@ -6,8 +6,12 @@
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
+#include "Eigen-3.3/Eigen/Geometry"
 #include "MPC.h"
 #include "json.hpp"
+
+using namespace Eigen;
+using namespace std;
 
 // for convenience
 using json = nlohmann::json;
@@ -65,6 +69,26 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+
+void convertPts(vector<double> &map_pts_x, vector<double> &map_pts_y, Eigen::VectorXd state, bool invert = false) {
+  double x = state(0);
+  double y = state(1);
+  double psi = state(2);
+  Rotation2Dd t(-psi);
+  if (invert) {
+    t = t.inverse();
+  }
+  std::cout << "car x: " << x << " y: " << y << "psi: " << psi << std::endl;
+  for (int i=0; i < map_pts_x.size(); i++ ){
+    // Translation<double,2>(-x, -y)
+    std::cout << "pre x: " << map_pts_x[i] << " y: " << map_pts_y[i] << std::endl;
+    Vector2d newpt =  t.toRotationMatrix() * Translation<double,2>(-x, -y) * Vector2d(map_pts_x[i], map_pts_y[i]);
+    std::cout << "aft x: " << newpt(0) << " y: " << newpt(1) << std::endl;
+    map_pts_x[i] = newpt(0);
+    map_pts_y[i] = newpt(1);
+  }
+}
+
 int main() {
   uWS::Hub h;
 
@@ -91,6 +115,7 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          Eigen::VectorXd state(6);
 
           /*
           * TODO: Calculate steering angle and throttle using MPC.
@@ -100,16 +125,47 @@ int main() {
           */
           double steer_value;
           double throttle_value;
+          state << px, py, psi, 0, 0, 0;
+
+          // Convert everything to car coordinates.
+          convertPts(ptsx, ptsy, state);
+          px = 0;
+          py = 0;
+          psi = 0;
+
+          // TODO: Make sure this actually works ^
+          Eigen::VectorXd x_way_pts = Eigen::VectorXd::Map(ptsx.data(), ptsx.size());
+          Eigen::VectorXd y_way_pts = Eigen::VectorXd::Map(ptsy.data(), ptsy.size());
+
+          auto coeffs = polyfit(x_way_pts, y_way_pts, 1);
+
+          double cte = polyeval(coeffs, 0);
+          double epsi = psi - atan(coeffs[1]);
+
+          state << px, py, psi, v, cte, epsi;
+
+          auto vars = mpc.Solve(state, coeffs);
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
+          steer_value = -vars[0] / deg2rad(25);
+          throttle_value = vars[1];
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
           //Display the MPC predicted trajectory 
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
+
+          for (int i = 2; i < vars.size(); i ++) {
+            if (i%2 == 0) {
+              mpc_x_vals.push_back(vars[i]);
+            }
+            else {
+              mpc_y_vals.push_back(vars[i]);
+            }
+          }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -120,7 +176,8 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-
+          next_x_vals =  ptsx;
+          next_y_vals = ptsy;
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
 
@@ -139,7 +196,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(100));
+          this_thread::sleep_for(chrono::milliseconds(0));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
