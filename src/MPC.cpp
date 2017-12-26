@@ -6,8 +6,15 @@
 using CppAD::AD;
 
 // TODO: Set the timestep length and duration
+
+
+// N of 10 worked well. I tried 100, but that slowed things down a lot.
 size_t N = 10;
-double dt = 0.1;
+
+// 0.2 also worked well. 0.1 w/ an N of 10 caused the car to steer wildly at highspeed
+// and eventually crashing, so the time horizon of 2 seconds seemed to work best. However, going to 0.3 caused
+// the car to cut corners even more, becoming reckless.
+double dt = 0.2;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -23,7 +30,7 @@ const double Lf = 2.67;
 
 // Both the reference cross track and orientation errors are 0.
 // The reference velocity is set to 40 mph.
-double ref_v = 70;
+double ref_v = 100 * 0.44704; // Convert from mph to meters per second.
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -49,30 +56,37 @@ class FG_eval {
     // `fg` a vector of the cost constraints, `vars` is a vector of variable values (state & actuators)
     // NOTE: You'll probably go back and forth between this function and
     // the Solver function below.
-// The cost is stored is the first element of `fg`.
-    // Any additions to the cost should be added to `fg[0]`.
+
+    // Initial cost function
     fg[0] = 0;
 
     // The part of the cost based on the reference state.
-    for (int t = 0; t < N; t++) {
-      fg[0] += 3000*CppAD::pow(vars[cte_start + t], 2);
-      fg[0] += 3000*CppAD::pow(vars[epsi_start + t], 2);
-      fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+    for (unsigned int t = 0; t < N; t++) {
+			// Cross track error.
+      fg[0] += 500 * CppAD::pow(vars[cte_start + t], 2);
+			// Direction (psi) error.
+      fg[0] += 500 * CppAD::pow(vars[epsi_start + t], 2);
+			// Reference velocity error.
+      fg[0] += 2. * CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
 
     // Minimize the use of actuators.
-    for (int t = 0; t < N - 1; t++) {
-      fg[0] += 5*CppAD::pow(vars[delta_start + t], 2);
-      fg[0] += 5*CppAD::pow(vars[a_start + t], 2);
+    for (unsigned int t = 0; t < N - 1; t++) {
+			// The steering angle.
+      fg[0] += 2000 * CppAD::pow(vars[delta_start + t], 2);
+			// The change in acceleration.
+      fg[0] += 5 * CppAD::pow(vars[a_start + t], 2);
     }
 
-    // Minimize the value gap between sequential actuations.
-    for (int t = 0; t < N - 2; t++) {
-      fg[0] += 200*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
-      fg[0] += 10*CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+    // Minimize the value gap between sequential uses of the actuators.
+		// This should smooth things out a bit.
+    for (unsigned int t = 0; t < N - 2; t++) {
+			// The difference between the next steering angle and this one.
+      fg[0] += 2000 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+			// The difference between the next acceleration and this one.
+      fg[0] += 10 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
 
-    //
     // Setup Constraints
     //
     // NOTE: In this section you'll setup the model constraints.
@@ -111,8 +125,10 @@ class FG_eval {
       AD<double> delta0 = vars[delta_start + t - 1];
       AD<double> a0 = vars[a_start + t - 1];
 
-      AD<double> f0 = coeffs[0] + coeffs[1] * x0;
-      AD<double> psides0 = CppAD::atan(coeffs[1]);
+      // Third order polynomial fit
+      AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * CppAD::pow(x0, 2) + coeffs[3] * CppAD::pow(x0, 3);
+      // 
+      AD<double> psides0 = CppAD::atan(coeffs[1] + 2 * coeffs[2] * x0 + 3 * coeffs[3] * CppAD::pow(x0, 2));
 
       // Here's `x` to get you started.
       // The idea here is to constraint this value to be 0.
@@ -126,12 +142,10 @@ class FG_eval {
       // epsi[t+1] = psi[t] - psides[t] + v[t] * delta[t] / Lf * dt
       fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
       fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
-      fg[1 + psi_start + t] = psi1 - (psi0 + v0 * delta0 / Lf * dt);
+      fg[1 + psi_start + t] = psi1 - (psi0 - v0 * delta0 / Lf * dt);
       fg[1 + v_start + t] = v1 - (v0 + a0 * dt);
-      fg[1 + cte_start + t] =
-          cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
-      fg[1 + epsi_start + t] =
-          epsi1 - ((psi0 - psides0) + v0 * delta0 / Lf * dt);
+      fg[1 + cte_start + t] = cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
+      fg[1 + epsi_start + t] = epsi1 - ((psi0 - psides0) - v0 * delta0 / Lf * dt);
     }
   }
 };
@@ -151,11 +165,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // element vector and there are 10 timesteps. The number of variables is:
   //
   // 4 * 10 + 2 * 9
-  // number of independent variables
-  // N timesteps == N - 1 actuations
-  const int n_actuators = 2;
-  size_t n_vars = N * state.size() + (N - 1) * n_actuators;
-
+  size_t n_vars = N * 6 + 2 * (N - 1);
   // TODO: Set the number of constraints
   // Number of constraints
   size_t n_constraints = N * 6;
@@ -248,7 +258,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   options += "Sparse  true        reverse\n";
   // NOTE: Currently the solver has a maximum time limit of 0.5 seconds.
   // Change this as you see fit.
-  options += "Numeric max_cpu_time          0.5\n";
+  options += "Numeric max_cpu_time          0.25\n";
 
   // place to return solution
   CppAD::ipopt::solve_result<Dvector> solution;
@@ -262,7 +272,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   ok &= solution.status == CppAD::ipopt::solve_result<Dvector>::success;
 
   // Cost
-  auto cost = solution.obj_value;
+  //auto cost = solution.obj_value;
   //std::cout << "Cost " << cost << std::endl;
 
   // TODO: Return the first actuator values. The variables can be accessed with
@@ -270,22 +280,14 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   //
   // {...} is shorthand for creating a vector, so auto x1 = {1.0,2.0}
   // creates a 2 element double vector.
-  //std::cout << "Solution Size" << solution.x.size() << std::endl;
-
-
-  vector<double> result;
-
-  result.push_back(solution.x[delta_start]);
-  result.push_back(solution.x[a_start]);
-
-  for (int i=0; i < N-1; i++) {
-    //std::cout << "i: " << i  << " N: " << N << std::endl;
-    result.push_back(solution.x[x_start + i + 1]);
-    result.push_back(solution.x[y_start + i + 1]);
+  std::vector<double> v_output;
+  v_output.push_back(solution.x[delta_start]);
+  v_output.push_back(solution.x[a_start]);
+  for (unsigned int i=x_start; i < y_start; i++) {
+    v_output.push_back(solution.x[i]);
   }
-  return result;
-//  return {solution.x[x_start + 1],   solution.x[y_start + 1],
-//          solution.x[psi_start + 1], solution.x[v_start + 1],
-//          solution.x[cte_start + 1], solution.x[epsi_start + 1],
-//          solution.x[delta_start],   solution.x[a_start]};
+  for (unsigned int i=y_start; i < psi_start; i++) {
+    v_output.push_back(solution.x[i]);
+  }
+  return v_output;
 }
