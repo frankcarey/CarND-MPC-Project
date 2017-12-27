@@ -6,6 +6,8 @@ Summary
 
 The goal of this project is to write a C++ program that uses waypoints to drive a car around a track in the Udacity CarND simulator. The outputs from the Model Predictive Controller (MPC) are the steering angle and accelerator values. To make the task more realistic, there is an artificial latency added of 100 ms that we have to handle. This version allows the car to mostly max out it's speed at 100mph, only breaking when neccessary to complete a turn.
 
+A video of the car running around the track can be found here: https://vimeo.com/248817415
+
 The Model
 ---------
 
