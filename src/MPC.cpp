@@ -30,7 +30,7 @@ const double Lf = 2.67;
 
 // Both the reference cross track and orientation errors are 0.
 // The reference velocity is set to 40 mph.
-double ref_v = 100 * 0.44704; // Convert from mph to meters per second.
+double ref_v = 65 * 0.44704; // Convert from mph to meters per second.
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -65,7 +65,7 @@ class FG_eval {
 			// Cross track error.
       fg[0] += 500 * CppAD::pow(vars[cte_start + t], 2);
 			// Direction (psi) error.
-      fg[0] += 500 * CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] += 2500 * CppAD::pow(vars[epsi_start + t], 2);
 			// Reference velocity error.
       fg[0] += 2. * CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
@@ -82,7 +82,7 @@ class FG_eval {
 		// This should smooth things out a bit.
     for (unsigned int t = 0; t < N - 2; t++) {
 			// The difference between the next steering angle and this one.
-      fg[0] += 2000 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+      fg[0] += 20000 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
 			// The difference between the next acceleration and this one.
       fg[0] += 10 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
@@ -183,19 +183,19 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // TODO: Set lower and upper limits for variables.
   // Set the initial variable values
 
-  double x = state[0];
-  double y = state[1];
-  double psi = state[2];
-  double v = state[3];
-  double cte = state[4];
-  double epsi = state[5];
+  const double x = state[0];
+  const double y = state[1];
+  const double psi = state[2];
+  const double v = state[3];
+  const double cte = state[4];
+  const double epsi = state[5];
 
-  vars[x_start] = x;
-  vars[y_start] = y;
-  vars[psi_start] = psi;
-  vars[v_start] = v;
-  vars[cte_start] = cte;
-  vars[epsi_start] = epsi;
+//  vars[x_start] = x;
+//  vars[y_start] = y;
+//  vars[psi_start] = psi;
+//  vars[v_start] = v;
+//  vars[cte_start] = cte;
+//  vars[epsi_start] = epsi;
 
   for (int i = 0; i < delta_start; i++) {
     vars_lowerbound[i] = -1.0e19;

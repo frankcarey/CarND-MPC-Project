@@ -25,8 +25,8 @@ double rad2deg(double x) { return x * 180 / pi(); }
 
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
-// 100ms of latency.
-const double latency = 0.100;
+// 100ms of latency + ~50ms for the solver.
+const double latency = 0.150;
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
